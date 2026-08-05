@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f1419">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>ChessNext — next best move</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161d25; --panel2: #1b2430; --border: #26313e;
+    --ink: #e9edf2; --muted: #93a2b2; --faint: #6b7a8a;
+    --accent: #d4a75c; --accent-strong: #e2b76f; --accent-ink: #241c0d;
+    --ok: #57b98b; --bad: #e07a7a;
+    --sq-l: #e9e4cf; --sq-d: #7c9a5e;
+    --last: rgba(212, 167, 92, .35); --best: rgba(230, 150, 60, .62);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --sym: "Apple Color Emoji", "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.45;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: .92em; background: #0c1116; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+
+  /* ---------- header ---------- */
+  .topbar {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 18px 26px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand .logo { font-family: var(--sym); font-size: 26px; color: var(--accent); }
+  .brand h1 { font-size: 20px; margin: 0; font-weight: 700; letter-spacing: .2px; }
+  .brand .tag { color: var(--muted); font-size: 13px; }
+  .topbar .src { color: var(--faint); font-size: 12px; }
+
+  /* ---------- layout ---------- */
+  main {
+    flex: 1; width: 100%; max-width: 1180px; margin: 0 auto;
+    padding: 22px 26px 10px;
+    display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 20px; align-items: start;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px;
+  }
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .analysis { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+  /* ---------- input ---------- */
+  .controls label.top { font-size: 13.5px; color: var(--muted); }
+  .inputrow { display: flex; gap: 8px; }
+  #moves {
+    flex: 1; min-width: 0;
+    background: #0c1116; color: var(--ink); border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 15px;
+  }
+  #moves:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  #moves::placeholder { color: var(--faint); }
+  .modetoggle {
+    display: inline-flex; gap: 2px; align-self: flex-start;
+    background: #0c1116; border: 1px solid var(--border); border-radius: 8px; padding: 2px;
+  }
+  .modebtn {
+    border: none; background: transparent; color: var(--muted);
+    font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: 6px; line-height: 1;
+    cursor: pointer;
+  }
+  .modebtn:hover { color: var(--ink); }
+  .modebtn.sel { background: var(--accent); color: var(--accent-ink); }
+  .modebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font-family: var(--sans); font-size: 14px; cursor: pointer;
+    border-radius: 9px; border: 1px solid var(--border); background: var(--panel2); color: var(--ink);
+    padding: 9px 14px; transition: background .12s, border-color .12s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+    font-weight: 700; padding: 10px 18px; white-space: nowrap;
+  }
+  button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .err { color: var(--bad); font-size: 13px; margin-top: -6px; }
+  .chips { color: var(--muted); font-size: 14px; min-height: 21px; font-family: var(--mono); }
+  .examples { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--faint); }
+  .chip-btn {
+    font-size: 12.5px; padding: 5px 10px; border-radius: 999px; background: #0c1116;
+  }
+  .chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- engine cards ---------- */
+  fieldset.engines { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  fieldset.engines legend { font-size: 13.5px; color: var(--muted); padding: 0 0 6px; }
+  .engine {
+    position: relative; display: block;
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 10px 38px;
+    cursor: pointer; background: #0c1116; transition: border-color .12s, background .12s;
+  }
+  .engine:hover { border-color: var(--accent); }
+  .engine input { position: absolute; opacity: 0; pointer-events: none; }
+  .engine .dot {
+    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--faint);
+  }
+  .engine input:checked + .dot { border-color: var(--accent); }
+  .engine input:checked + .dot::after {
+    content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--accent);
+  }
+  .engine.sel { border-color: var(--accent); background: #171c10; }
+  .engine .en { font-weight: 700; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+  .engine .ed { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .engine .rec {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--accent-ink);
+    background: var(--accent); border-radius: 999px; padding: 1px 7px; font-weight: 800;
+  }
+  .status { font-size: 13.5px; color: var(--muted); min-height: 20px; }
+  .status.busy { color: var(--accent); }
+  .status.error { color: var(--bad); }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--accent); border-top-color: transparent;
+    animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  /* ---------- board ---------- */
+  .boardpanel { container-type: inline-size; }
+  .boardhead {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    margin-bottom: 12px; flex-wrap: wrap;
+  }
+  #fenLabel { font-family: var(--mono); font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .boardhead .btns { display: flex; gap: 6px; }
+  .boardhead button { font-size: 12.5px; padding: 6px 10px; }
+  .board {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    width: 100%; max-width: 560px; aspect-ratio: 1;
+    border: 1px solid #000; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
+    user-select: none;
+  }
+  .sq { position: relative; display: flex; align-items: center; justify-content: center; font-size: 7.4cqw; }
+  .sq.l { background: var(--sq-l); }
+  .sq.d { background: var(--sq-d); }
+  .sq.last { background: var(--last); }
+  .sq.best { background: var(--best); }
+  .sq .p { font-family: var(--sym); line-height: 1; }
+  .sq .p.w { color: #f6f3e9; -webkit-text-stroke: 1.1px #3a3f36; text-shadow: 0 2px 3px rgba(0,0,0,.35); }
+  .sq .p.b { color: #262c33; -webkit-text-stroke: 1.1px #e9e4cf; text-shadow: 0 2px 3px rgba(0,0,0,.3); }
+  .sq .coord {
+    position: absolute; font-size: 1.7cqw; font-family: var(--mono); color: rgba(0,0,0,.45);
+  }
+  .sq.l .coord { color: rgba(90,110,70,.75); }
+  .sq.d .coord { color: rgba(235,232,205,.8); }
+  .sq .coord.rank { top: 2px; left: 3px; }
+  .sq .coord.file { bottom: 1px; right: 3px; }
+
+  /* ---------- result ---------- */
+  .result { display: flex; flex-direction: column; gap: 10px; }
+  .result[hidden] { display: none; }
+  .rhead { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .8px; }
+  .rhead b { color: var(--accent); }
+  .rmove { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .rmove .glyph { font-family: var(--sym); font-size: 44px; line-height: 1; width: 52px; text-align: center; }
+  .rmove .san { font-size: 40px; font-weight: 800; letter-spacing: .5px; }
+  .rmove code { font-size: 19px; padding: 3px 10px; }
+  .reval { font-size: 17px; font-weight: 700; }
+  .reval.even { color: var(--ink); }
+  .reval.white { color: var(--ok); }
+  .reval.black { color: var(--bad); }
+  .rdetail { color: var(--muted); font-size: 13px; }
+  .rpv { font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rpv .chip {
+    font-family: var(--mono); background: #0c1116; border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 7px; font-size: 12.5px; color: var(--ink);
+  }
+  .rbtns { display: flex; gap: 8px; margin-top: 4px; }
+  .dbrows { border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .fenafter {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    border-top: 1px solid var(--border); padding-top: 10px;
+  }
+  .fenafter[hidden] { display: none; }
+  .falabel { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px; white-space: nowrap; }
+  .fenafter code { word-break: break-all; font-size: 12px; }
+  button.mini { font-size: 12px; padding: 4px 9px; }
+  .dbrow { display: grid; grid-template-columns: 74px 64px 1fr; align-items: center; gap: 8px; font-size: 13px; }
+  .dbrow code { font-size: 12px; }
+  .dbrow .bar { height: 6px; border-radius: 3px; background: #0c1116; overflow: hidden; }
+  .dbrow .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .dbrow.best .dbname { color: var(--accent); font-weight: 700; }
+
+  /* ---------- footer ---------- */
+  footer {
+    max-width: 1180px; width: 100%; margin: 0 auto;
+    padding: 6px 26px 26px; color: var(--faint); font-size: 12.5px;
+  }
+
+  @media (max-width: 920px) {
+    main { grid-template-columns: 1fr; padding-top: 16px; }
+    .board { max-width: 100%; }
+  }
+  @media (max-width: 520px) {
+    .rmove .san { font-size: 30px; }
+    .topbar .src { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">♞</span><h1>ChessNext</h1><span class="tag">next best move — in UCI, from free chess APIs</span></div>
+  <div class="src">Powered by <a href="https://lichess.org/api">Lichess Cloud Eval</a> · <a href="https://chess-api.com">chess-api.com</a> · <a href="https://www.chessdb.cn">chessdb.cn</a></div>
+</header>
+
+<main>
+  <section class="controls panel">
+    <label class="top" for="moves">Position — your moves (UCI like <code>e2e4 e7e5</code> or SAN like <code>e4 e5 Nf3</code>), or paste a <b>FEN</b> of your current game</label>
+    <div class="modetoggle" role="radiogroup" aria-label="Position input mode">
+      <button type="button" id="modeMoves" class="modebtn sel" aria-pressed="true">Moves</button>
+      <button type="button" id="modeFen" class="modebtn" aria-pressed="false">FEN</button>
+    </div>
+    <div class="inputrow">
+      <input id="moves" spellcheck="false" autocomplete="off" placeholder="e2e4 e7e5 g1f3" aria-label="Moves or FEN">
+      <button id="analyzeBtn" class="primary">Analyze</button>
+    </div>
+    <div id="parseError" class="err" hidden></div>
+    <div id="chips" class="chips">Start position</div>
+    <div class="examples">Try:
+      <button class="chip-btn" data-moves="e2e4 e7e5 g1f3 b8c6 f1c4">Italian</button>
+      <button class="chip-btn" data-moves="e2e4 c7c5 g1f3 d7d6 d2d4">Sicilian</button>
+      <button class="chip-btn" data-moves="d2d4 d7d5 c2c4">Queen's Gambit</button>
+      <button class="chip-btn" data-moves="e2e4 e7e5 g1f3 b8c6 f1b5">Ruy Lopez</button>
+    </div>
+
+    <fieldset class="engines">
+      <legend>Engine — where the best move comes from</legend>
+      <label class="engine sel">
+        <input type="radio" name="engine" value="cloud" checked>
+        <span class="dot"></span>
+        <span class="en">Lichess Cloud Eval <span class="rec">recommended</span></span>
+        <span class="ed">Deep Stockfish analysis served from Lichess' free cloud — instant (~depth 60+), no key, no wait.</span>
+      </label>
+      <label class="engine">
+        <input type="radio" name="engine" value="api">
+        <span class="dot"></span>
+        <span class="en">Live Stockfish (chess-api.com)</span>
+        <span class="ed">Runs a real Stockfish per request (~1–2 s). Works for any position — no database coverage needed. Free tier: rapid clicks can hit rate limits (auto-retried); FENs with an en-passant square are analyzed with it ignored (API quirk).</span>
+      </label>
+      <label class="engine">
+        <input type="radio" name="engine" value="chessdb">
+        <span class="dot"></span>
+        <span class="en">ChessDB.cn opening book</span>
+        <span class="ed">Instant win-rate opening database. The “book” answer for the first moves, with alternatives ranked.</span>
+      </label>
+    </fieldset>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="analysis">
+    <div class="panel boardpanel">
+      <div class="boardhead">
+        <span id="fenLabel">Start position</span>
+        <div class="btns">
+          <button id="flipBtn" title="Flip the board">⇅ Flip</button>
+          <button id="copyFenBtn" title="Copy the current position as FEN">Copy FEN</button>
+          <button id="lichessBtn" title="Open this position on lichess.org">Lichess ↗</button>
+        </div>
+      </div>
+      <div id="board" class="board" aria-label="Chess board"></div>
+    </div>
+
+    <div id="result" class="panel result" hidden>
+      <div class="rhead">Best move · <b id="engineName"></b></div>
+      <div class="rmove">
+        <span id="rGlyph" class="glyph"></span>
+        <span id="rSan" class="san"></span>
+        <code id="rUci"></code>
+      </div>
+      <div id="reval" class="reval even"></div>
+      <div id="rdetail" class="rdetail"></div>
+      <div id="rpv" class="rpv"></div>
+      <div id="fenAfterRow" class="fenafter" hidden>
+        <span class="falabel">FEN after this move</span>
+        <code id="rFenAfter"></code>
+        <button id="copyAfterBtn" class="mini" title="Copy the FEN after the best move">Copy</button>
+      </div>
+      <div id="topMoves"></div>
+      <div id="dbList"></div>
+      <div class="rbtns">
+        <button id="playBtn" class="primary" title="Append the best move and re-analyze">Play it →</button>
+        <button id="copyPvBtn" disabled title="Copy the full engine line as UCI moves">Copy PV (UCI)</button>
+        <button id="lichessAfterBtn" disabled title="Explore the position after this move on lichess.org">Open in Lichess ↗</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Free, keyless APIs — requests go straight from this page to the services: Lichess Cloud Eval (instant deep analysis), chess-api.com (live Stockfish), chessdb.cn (opening book). No server, no storage, no sign-up. Please respect their rate limits.
+</footer>
+
+<script type="module">
+import { Chess } from './chess.min.js';
+(function () {
+  'use strict';
+
+  /* ---------------- state ---------------- */
+  var state = {
+    engine: 'cloud',
+    mode: 'moves',
+    flipped: false,
+    chess: new Chess(),
+    lastMove: null,
+    result: null,
+    applied: []
+  };
+  var cache = {}; // key engineId|fen -> result
+
+  /* ---------------- elements ---------------- */
+  var inputEl = document.getElementById('moves');
+  var analyzeBtn = document.getElementById('analyzeBtn');
+  var modeMovesBtn = document.getElementById('modeMoves');
+  var modeFenBtn = document.getElementById('modeFen');
+  var parseErrEl = document.getElementById('parseError');
+  var chipsEl = document.getElementById('chips');
+  var statusEl = document.getElementById('status');
+  var boardEl = document.getElementById('board');
+  var fenLabelEl = document.getElementById('fenLabel');
+  var resultEl = document.getElementById('result');
+  var engineNameEl = document.getElementById('engineName');
+  var rGlyphEl = document.getElementById('rGlyph');
+  var rSanEl = document.getElementById('rSan');
+  var rUciEl = document.getElementById('rUci');
+  var revalEl = document.getElementById('reval');
+  var rdetailEl = document.getElementById('rdetail');
+  var rpvEl = document.getElementById('rpv');
+  var fenAfterRow = document.getElementById('fenAfterRow');
+  var rFenAfterEl = document.getElementById('rFenAfter');
+  var copyAfterBtn = document.getElementById('copyAfterBtn');
+  var dbListEl = document.getElementById('dbList');
+  var topMovesEl = document.getElementById('topMoves');
+  var playBtn = document.getElementById('playBtn');
+  var copyPvBtn = document.getElementById('copyPvBtn');
+  var lichessBtn = document.getElementById('lichessBtn');
+  var lichessAfterBtn = document.getElementById('lichessAfterBtn');
+
+  var GLYPHS = {
+    w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
+    b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
+  };
+
+  /* ---------------- errors ---------------- */
+  function err(code) { var e = new Error(code); e.code = code; return e; }
+
+  async function jfetch(url, opts) {
+    try { return await fetch(url, opts); }
+    catch (e) { throw err('NET'); }
+  }
+
+  /* ---------------- engines ---------------- */
+  var ENGINES = {
+    cloud: {
+      id: 'cloud', label: 'Lichess Cloud Eval',
+      async analyze(fen) {
+        var r = await jfetch('https://lichess.org/api/cloud-eval?fen=' + encodeURIComponent(fen) + '&multiPv=3');
+        if (r.status === 404) throw err('NO_CLOUD');
+        if (r.status === 429) throw err('RATE');
+        if (!r.ok) throw err('HTTP');
+        var j = await r.json();
+        var all = j.pvs || [];
+        var candidates = all.slice(0, 3).map(function (pv) {
+          var first = String(pv.moves || '').trim().split(/\s+/).filter(Boolean)[0];
+          return {
+            uci: first,
+            cp: (typeof pv.cp === 'number' ? pv.cp : null),
+            mate: (typeof pv.mate === 'number' ? pv.mate : null)
+          };
+        }).filter(function (c) { return c.uci; });
+        var pv0 = all[0];
+        if (!pv0 || !pv0.moves) throw err('NO_EVAL');
+        var pv = String(pv0.moves).trim().split(/\s+/).filter(Boolean);
+        return {
+          uci: pv[0], cp: (typeof pv0.cp === 'number' ? pv0.cp : null),
+          mate: (typeof pv0.mate === 'number' ? pv0.mate : null),
+          winPercent: (typeof pv0.winPercent === 'number' ? pv0.winPercent : null),
+          depth: j.depth || null, knodes: j.knodes || null, pv: pv,
+          candidates: candidates,
+          note: 'Lichess cloud Stockfish database'
+        };
+      }
+    },
+    api: {
+      id: 'api', label: 'Live Stockfish (chess-api.com)',
+      async analyze(fen) {
+        var lastErr = null;
+        var fenToSend = fen;
+        var epStripped = false;
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            var r = await jfetch('https://chess-api.com/v1', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fen: fenToSend })
+            });
+            if (!r.ok) throw err('HTTP');
+            var j = await r.json();
+            if (j.move) {
+              return {
+                uci: j.move,
+                cp: (typeof j.centipawns === 'number' ? j.centipawns : null),
+                mate: (typeof j.mate === 'number' ? j.mate : null),
+                depth: j.depth || null, knodes: null,
+                pv: Array.isArray(j.continuationArr) ? j.continuationArr : [],
+                note: 'Live Stockfish' + (epStripped ? ' · en-passant square ignored (API limit)' : '')
+              };
+            }
+            // their parser rejects FENs carrying an en-passant square — strip it, retry once
+            if (!epStripped) {
+              var parts = fenToSend.split(/\s+/);
+              if (parts.length === 6 && parts[3] !== '-') {
+                parts[3] = '-';
+                fenToSend = parts.join(' ');
+                epStripped = true;
+                lastErr = err('NO_EVAL');
+                continue;
+              }
+            }
+            lastErr = err('NO_EVAL');
+          } catch (e) { lastErr = e; }
+          if (attempt < 2) await new Promise(function (res) { setTimeout(res, 1500); });
+        }
+        throw lastErr;
+      }
+    },
+    chessdb: {
+      id: 'chessdb', label: 'ChessDB.cn opening book',
+      async analyze(fen) {
+        var r = await jfetch('https://www.chessdb.cn/cdb.php?action=queryall&board=' + encodeURIComponent(fen));
+        if (!r.ok) throw err('HTTP');
+        var t = await r.text();
+        if (!t || t.indexOf('move:') === -1) throw err('NO_BOOK');
+        var rows = t.split('|').map(function (seg) {
+          var kv = {};
+          seg.split(',').forEach(function (pair) {
+            var i = pair.indexOf(':');
+            if (i > 0) kv[pair.slice(0, i)] = pair.slice(i + 1);
+          });
+          return kv;
+        }).filter(function (x) { return x.move; });
+        if (!rows.length) throw err('NO_BOOK');
+        var rankOf = function (m) { return parseInt(m.rank, 10) || 0; };
+        var wrOf = function (m) { return parseFloat(m.winrate) || 0; };
+        var best = rows.slice().sort(function (a, b) {
+          return (rankOf(b) - rankOf(a)) || (wrOf(b) - wrOf(a));
+        })[0];
+        return {
+          uci: best.move, cp: null, mate: null, depth: null, pv: [],
+          winrate: wrOf(best),
+          allMoves: rows.map(function (m) {
+            return { uci: m.move, winrate: wrOf(m), rank: rankOf(m) };
+          }),
+          note: 'ChessDB.cn win-rate opening book'
+        };
+      }
+    }
+  };
+
+  /* ---------------- move parsing (UCI or SAN) ---------------- */
+  function uciObj(u) {
+    return { from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.length > 4 ? u[4].toLowerCase() : undefined };
+  }
+  function tryMove(chess, tok) {
+    var isUci = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(tok);
+    var mv = null;
+    if (isUci) {
+      mv = chess.move(uciObj(tok));
+    } else {
+      try { mv = chess.move(tok); } catch (e) { mv = null; }
+    }
+    return mv;
+  }
+  function parseMoves(text) {
+    var tokens = (text || '').trim().split(/\s+/).filter(Boolean);
+    var chess = new Chess();
+    var applied = [];
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i];
+      if (/^\d+\.\.?$/.test(tok)) continue;        // "1." / "1..." move numbers
+      var mv = tryMove(chess, tok);
+      if (!mv) return { error: '"' + tok + '" is not a legal move from this position.' };
+      applied.push({ from: mv.from, to: mv.to, san: mv.san, color: mv.color, promotion: mv.promotion || '' });
+    }
+    return { chess: chess, applied: applied };
+  }
+
+  /* ---------------- position input: moves or FEN ---------------- */
+  function setMode(mode) {
+    state.mode = mode;
+    modeMovesBtn.classList.toggle('sel', mode === 'moves');
+    modeMovesBtn.setAttribute('aria-pressed', mode === 'moves' ? 'true' : 'false');
+    modeFenBtn.classList.toggle('sel', mode === 'fen');
+    modeFenBtn.setAttribute('aria-pressed', mode === 'fen' ? 'true' : 'false');
+    inputEl.placeholder = mode === 'fen'
+      ? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+      : 'e2e4 e7e5 g1f3';
+    var ex = document.querySelector('.examples');
+    if (ex) ex.style.display = mode === 'fen' ? 'none' : 'flex';
+  }
+  function isValidFen(t) {
+    var parts = t.trim().split(/\s+/);
+    if (parts.length !== 6) return false;
+    var ranks = parts[0].split('/');
+    if (ranks.length !== 8) return false;
+    for (var i = 0; i < 8; i++) {
+      var rank = ranks[i];
+      if (!rank || rank.length > 8) return false;
+      var sum = 0, prevDigit = false;
+      for (var j = 0; j < rank.length; j++) {
+        var ch = rank[j];
+        if (ch >= '1' && ch <= '8') {
+          if (prevDigit) return false;               // digits must not be adjacent
+          sum += +ch; prevDigit = true;
+        } else if ('pnbrqkPNBRQK'.indexOf(ch) !== -1) {
+          sum += 1; prevDigit = false;
+        } else {
+          return false;
+        }
+      }
+      if (sum !== 8) return false;                   // each rank must total 8 squares
+    }
+    if (parts[1] !== 'w' && parts[1] !== 'b') return false;
+    var castling = parts[2];
+    if (castling !== '-') {
+      if (!/^[KQkq]+$/.test(castling)) return false;
+      var seen = '';
+      for (var k = 0; k < castling.length; k++) {
+        if (seen.indexOf(castling[k]) !== -1) return false;   // no duplicates
+        seen += castling[k];
+      }
+    }
+    if (parts[3] !== '-' && !/^[a-h][36]$/.test(parts[3])) return false;   // ep square
+    if (!/^\d+$/.test(parts[4])) return false;                 // halfmove clock
+    if (!/^\d+$/.test(parts[5]) || +parts[5] < 1) return false; // fullmove number
+    return true;
+  }
+  function parseInput(text) {
+    var t = (text || '').trim();
+    if (!t) return { chess: new Chess(), applied: [], mode: 'moves' };   // empty = start position
+    if (t.indexOf('/') !== -1) {
+      // FENs always contain '/'; moves never do — so this is a FEN (or a bad one)
+      if (!isValidFen(t)) {
+        return { error: state.mode === 'fen'
+          ? 'Not a valid FEN — check the 6 fields: pieces, side to move, castling, en passant, halfmove, fullmove.'
+          : 'That looks like a FEN but it didn\'t validate — check it, or switch to Moves mode.' };
+      }
+      var c = new Chess(t);
+      return { chess: c, applied: [], mode: 'fen' };
+    }
+    if (state.mode === 'fen') {
+      return { error: 'FEN mode: paste a complete FEN, e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' };
+    }
+    var parsed = parseMoves(t);
+    if (parsed.error) return parsed;
+    parsed.mode = 'moves';
+    return parsed;
+  }
+  function switchMode(mode) {
+    if (state.mode === mode) return;          // already in this mode — no-op
+    setMode(mode);
+    inputEl.value = '';                        // fresh input for the new mode
+    parseErrEl.hidden = true;
+    state.chess = new Chess();
+    state.applied = [];
+    state.lastMove = null;
+    state.result = null;
+    resultEl.hidden = true;
+    playBtn.disabled = true;
+    copyPvBtn.disabled = true;
+    lichessAfterBtn.disabled = true;
+    renderChips(state.applied);
+    renderBoard();
+    setStatus('', '');
+    saveState();
+  }
+
+  /* ---------------- board rendering ---------------- */
+  function renderBoard() {
+    var board = state.chess.board();          // board[0] = rank 8
+    var hl = {};
+    if (state.lastMove) { hl[state.lastMove.from] = 'last'; hl[state.lastMove.to] = 'last'; }
+    if (state.result && state.result.uci) { hl[state.result.uci.slice(0, 2)] = 'best'; hl[state.result.uci.slice(2, 4)] = 'best'; }
+    var files = 'abcdefgh';
+    var html = '';
+    for (var r = 0; r < 8; r++) {
+      var rank = state.flipped ? r + 1 : 8 - r;
+      for (var f = 0; f < 8; f++) {
+        var fileIdx = state.flipped ? 7 - f : f;
+        var sq = files[fileIdx] + rank;
+        var cell = board[8 - rank][fileIdx];
+        var light = (rank + fileIdx) % 2 === 0;
+        var cls = 'sq ' + (light ? 'l' : 'd') + (hl[sq] ? ' ' + hl[sq] : '');
+        html += '<div class="' + cls + '" data-sq="' + sq + '">';
+        if (cell) html += '<span class="p ' + cell.color + '">' + GLYPHS[cell.color][cell.type] + '</span>';
+        var showRank = state.flipped ? fileIdx === 7 : fileIdx === 0;
+        var showFile = state.flipped ? rank === 8 : rank === 1;
+        if (showRank) html += '<span class="coord rank">' + rank + '</span>';
+        if (showFile) html += '<span class="coord file">' + files[fileIdx] + '</span>';
+        html += '</div>';
+      }
+    }
+    boardEl.innerHTML = html;
+    fenLabelEl.textContent = state.chess.fen();
+  }
+
+  function renderChips(applied) {
+    if (state.mode === 'fen') { chipsEl.textContent = 'Position from FEN'; return; }
+    if (!applied.length) { chipsEl.textContent = 'Start position'; return; }
+    var parts = [];
+    for (var i = 0; i < applied.length; i += 2) {
+      parts.push((i / 2 + 1) + '. ' + applied[i].san + (applied[i + 1] ? ' ' + applied[i + 1].san : ''));
+    }
+    chipsEl.textContent = parts.join('   ');
+  }
+
+  /* ---------------- result rendering ---------------- */
+  function fmtNodes(n) {
+    if (!n) return null;
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+  function fmtEval(cp) {
+    var s = cp / 100;
+    var sign = s > 0 ? '+' : (s < 0 ? '−' : '');
+    return sign + Math.abs(s).toFixed(2);
+  }
+  function glyphFor(fen, uci) {
+    var c = new Chess(fen);
+    var m = c.move(uciObj(uci));
+    if (!m) return '';
+    var cell = c.board()[8 - (m.to.charCodeAt(1) - 48)][m.to.charCodeAt(0) - 97];
+    return cell ? GLYPHS[cell.color][cell.type] : '';
+  }
+
+  function applyResult(res, engineId) {
+    state.result = res;
+    engineNameEl.textContent = ENGINES[engineId].label;
+    rGlyphEl.textContent = glyphFor(state.chess.fen(), res.uci);
+    rSanEl.textContent = res.san;
+    rUciEl.textContent = res.uci;
+    /* FEN after the best move */
+    var after = new Chess(state.chess.fen());
+    var afterMv = after.move(uciObj(res.uci));
+    res.fenAfter = afterMv ? after.fen() : '';
+    rFenAfterEl.textContent = res.fenAfter;
+    fenAfterRow.hidden = !res.fenAfter;
+    /* eval line */
+    revalEl.className = 'reval';
+    if (res.mate) {
+      revalEl.textContent = 'Checkmate in ' + Math.abs(res.mate) + (res.mate < 0 ? ' — side to move is losing' : ' — side to move delivers it');
+    } else if (typeof res.cp === 'number') {
+      var extra = '';
+      if (res.winPercent != null) extra = ' · win chance ' + res.winPercent.toFixed(1) + '%';
+      revalEl.textContent = 'Evaluation ' + fmtEval(res.cp) + " (White's side)" + extra;
+      revalEl.classList.add(res.cp > 60 ? 'white' : (res.cp < -60 ? 'black' : 'even'));
+    } else if (res.winrate != null) {
+      revalEl.textContent = 'Book win rate ' + res.winrate.toFixed(1) + '%';
+      revalEl.classList.add('even');
+    } else {
+      revalEl.textContent = '';
+    }
+    /* detail line */
+    var bits = [];
+    if (res.depth) bits.push('depth ' + res.depth);
+    var nodes = fmtNodes(res.knodes);
+    if (nodes) bits.push(nodes + ' nodes');
+    bits.push(res.note);
+    rdetailEl.textContent = bits.join(' · ');
+    /* follow-up PV chips */
+    rpvEl.innerHTML = '';
+    if (res.pv && res.pv.length > 1) {
+      var c = new Chess(state.chess.fen());
+      var sans = [];
+      for (var i = 1; i < Math.min(res.pv.length, 10); i++) {
+        var u = res.pv[i];
+        var m = c.move(uciObj(u));
+        sans.push(m ? m.san : u);
+        if (!m) break;
+      }
+      if (sans.length) {
+        var label = document.createElement('span');
+        label.textContent = 'Follow-up:';
+        rpvEl.appendChild(label);
+        sans.forEach(function (s) {
+          var chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = s;
+          rpvEl.appendChild(chip);
+        });
+      }
+    }
+    /* chessdb top-5 list */
+    dbListEl.innerHTML = '';
+    if (res.allMoves && res.allMoves.length) {
+      var maxWr = Math.max.apply(null, res.allMoves.map(function (m) { return m.winrate; })) || 1;
+      var wrap = document.createElement('div');
+      wrap.className = 'dbrows';
+      wrap.appendChild(header('Top book moves', ''));
+      res.allMoves.slice(0, 5).forEach(function (m) {
+        var row = document.createElement('div');
+        row.className = 'dbrow' + (m.uci === res.uci ? ' best' : '');
+        var name = document.createElement('span');
+        name.className = 'dbname';
+        var code = document.createElement('code');
+        code.textContent = m.uci;
+        name.appendChild(code);
+        var wr = document.createElement('span');
+        wr.textContent = m.winrate.toFixed(1) + '%';
+        var bar = document.createElement('span');
+        bar.className = 'bar';
+        var fill = document.createElement('i');
+        fill.style.width = Math.max(2, (m.winrate / maxWr) * 100) + '%';
+        bar.appendChild(fill);
+        row.appendChild(name); row.appendChild(wr); row.appendChild(bar);
+        wrap.appendChild(row);
+      });
+      dbListEl.appendChild(wrap);
+    }
+    /* cloud top-3 candidates (multiPv) */
+    topMovesEl.innerHTML = '';
+    if (res.candidates && res.candidates.length > 1) {
+      var wrap2 = document.createElement('div');
+      wrap2.className = 'dbrows';
+      wrap2.appendChild(header('Top moves', ''));
+      res.candidates.forEach(function (cand, i) {
+        var row = document.createElement('div');
+        row.className = 'dbrow' + (i === 0 ? ' best' : '');
+        var name = document.createElement('span');
+        name.className = 'dbname';
+        var code2 = document.createElement('code');
+        code2.textContent = cand.uci;
+        name.appendChild(code2);
+        var ev = document.createElement('span');
+        ev.textContent = cand.mate
+          ? 'Mate in ' + Math.abs(cand.mate)
+          : (typeof cand.cp === 'number' ? fmtEval(cand.cp) : '');
+        var spacer = document.createElement('span');
+        row.appendChild(name); row.appendChild(ev); row.appendChild(spacer);
+        wrap2.appendChild(row);
+      });
+      topMovesEl.appendChild(wrap2);
+    }
+    resultEl.hidden = false;
+    playBtn.disabled = false;
+    copyPvBtn.disabled = !(res.pv && res.pv.length);
+    lichessAfterBtn.disabled = !res.fenAfter;
+    renderBoard();
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+  }
+  function header(txt) {
+    var el = document.createElement('div');
+    el.style.cssText = 'color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;margin-bottom:2px';
+    el.textContent = txt;
+    return el;
+  }
+
+  /* ---------------- analyze flow ---------------- */
+  function currentEngine() {
+    var sel = document.querySelector('input[name=engine]:checked');
+    return sel ? sel.value : 'cloud';
+  }
+
+  function setStatus(kind, text) {
+    statusEl.className = 'status' + (kind ? ' ' + kind : '');
+    statusEl.innerHTML = kind === 'busy' ? '<span class="spinner"></span>' + text : text;
+  }
+
+  function messageFor(e, engineId) {
+    switch (e.code) {
+      case 'NO_CLOUD':
+        return 'This position is not in the Lichess cloud database — switch to “Live Stockfish”, it works for any position.';
+      case 'NO_BOOK':
+        return 'This position is not in the ChessDB opening book — try one of the engine options.';
+      case 'RATE':
+        return 'Lichess rate limit hit — wait a few seconds, then press Analyze again.';
+      case 'HTTP':
+        return 'Upstream service error. Try again or switch engine.';
+      case 'NET':
+        return 'Network error — check your connection.';
+      default:
+        return 'Something went wrong: ' + e.message;
+    }
+  }
+
+  async function analyze() {
+    var parsed = parseInput(inputEl.value);
+    if (parsed.error) {
+      parseErrEl.textContent = parsed.error;
+      parseErrEl.hidden = false;
+      return;
+    }
+    parseErrEl.hidden = true;
+    setMode(parsed.mode);
+    state.chess = parsed.chess;
+    state.applied = parsed.applied;
+    state.lastMove = parsed.applied.length ? parsed.applied[parsed.applied.length - 1] : null;
+    state.result = null;
+    resultEl.hidden = true;
+    renderChips(parsed.applied);
+    renderBoard();
+    if (state.chess.moves().length === 0) {
+      setStatus('error', 'Game over — no moves left to suggest.');
+      return;
+    }
+    var engineId = currentEngine();
+    var key = engineId + '|' + state.chess.fen();
+    if (cache[key]) { applyResult(cache[key], engineId); return; }
+    setStatus('busy', 'Analyzing with ' + ENGINES[engineId].label + '…');
+    analyzeBtn.disabled = true;
+    playBtn.disabled = true;
+    try {
+      var res = await ENGINES[engineId].analyze(state.chess.fen());
+      if (res.uci) {
+        var c = new Chess(state.chess.fen());
+        var m = c.move(uciObj(res.uci));
+        if (!m) throw err('NO_EVAL');
+        res.san = m.san;
+      }
+      cache[key] = res;
+      applyResult(res, engineId);
+    } catch (e) {
+      setStatus('error', messageFor(e, engineId));
+    } finally {
+      analyzeBtn.disabled = false;
+    }
+  }
+
+  /* ---------------- actions ---------------- */
+  function playBest() {
+    var res = state.result;
+    if (!res || !res.uci) return;
+    var mv = state.chess.move(uciObj(res.uci));
+    if (!mv) return;
+    if (state.mode === 'fen') {
+      inputEl.value = state.chess.fen();
+    } else {
+      var hist = state.chess.history({ verbose: true }).map(function (m) {
+        return m.from + m.to + (m.promotion || '');
+      });
+      inputEl.value = hist.join(' ');
+    }
+    saveState();
+    analyze();
+  }
+  function copyText(txt, doneMsg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () {
+        setStatus('', doneMsg);
+      }, function () { setStatus('', txt); });
+    } else {
+      setStatus('', txt);
+    }
+  }
+  function copyFen() { copyText(state.chess.fen(), 'FEN copied to clipboard.'); }
+  function copyFenAfter() {
+    if (state.result && state.result.fenAfter) copyText(state.result.fenAfter, 'FEN after move copied to clipboard.');
+  }
+  function copyPvUci() {
+    var res = state.result;
+    if (!res || !res.pv || !res.pv.length) return;
+    copyText(res.pv.join(' '), 'PV copied (UCI).');
+  }
+  function fenUrl(fen) { return 'https://lichess.org/analysis/' + fen.replace(/ /g, '_'); }
+  function openLichess() { window.open(fenUrl(state.chess.fen()), '_blank'); }
+  function openLichessAfter() {
+    var fen = state.result && state.result.fenAfter ? state.result.fenAfter : state.chess.fen();
+    window.open(fenUrl(fen), '_blank');
+  }
+
+  /* ---------------- persistence ---------------- */
+  function saveState() {
+    try {
+      localStorage.setItem('chessnext', JSON.stringify({ moves: inputEl.value, engine: currentEngine(), mode: state.mode }));
+    } catch (e) { /* private mode */ }
+  }
+  function restoreState() {
+    try {
+      var raw = localStorage.getItem('chessnext');
+      if (!raw) return;
+      var s = JSON.parse(raw);
+      if (typeof s.moves === 'string') inputEl.value = s.moves;
+      if (s.mode === 'moves' || s.mode === 'fen') setMode(s.mode);
+      if (s.engine && ENGINES[s.engine]) {
+        state.engine = s.engine;
+        var rb = document.querySelector('input[name=engine][value="' + s.engine + '"]');
+        if (rb) { rb.checked = true; markEngine(); }
+      }
+    } catch (e) { /* ignore */ }
+  }
+  function markEngine() {
+    var cards = document.querySelectorAll('.engine');
+    var checked = currentEngine();
+    cards.forEach(function (c) {
+      c.classList.toggle('sel', c.querySelector('input').value === checked);
+    });
+  }
+
+  /* ---------------- wire up ---------------- */
+  analyzeBtn.addEventListener('click', function () { saveState(); analyze(); });
+  modeMovesBtn.addEventListener('click', function () { switchMode('moves'); });
+  modeFenBtn.addEventListener('click', function () { switchMode('fen'); });
+  inputEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { saveState(); analyze(); } });
+  playBtn.addEventListener('click', playBest);
+  document.getElementById('flipBtn').addEventListener('click', function () {
+    state.flipped = !state.flipped;
+    renderBoard();
+  });
+  document.getElementById('copyFenBtn').addEventListener('click', copyFen);
+  copyAfterBtn.addEventListener('click', copyFenAfter);
+  copyPvBtn.addEventListener('click', copyPvUci);
+  lichessBtn.addEventListener('click', openLichess);
+  lichessAfterBtn.addEventListener('click', openLichessAfter);
+  document.querySelectorAll('input[name=engine]').forEach(function (rb) {
+    rb.addEventListener('change', function () {
+      markEngine();
+      saveState();
+      var parsed = parseMoves(inputEl.value);
+      if (!parsed.error) analyze();
+    });
+  });
+  document.querySelectorAll('.chip-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      inputEl.value = b.dataset.moves;
+      saveState();
+      analyze();
+    });
+  });
+
+  /* ---------------- boot ---------------- */
+  restoreState();
+  markEngine();
+  var bootParsed = inputEl.value.trim() ? parseInput(inputEl.value) : null;
+  if (bootParsed && bootParsed.error) {
+    parseErrEl.textContent = 'Saved position no longer parses: ' + bootParsed.error;
+    parseErrEl.hidden = false;
+    inputEl.value = '';
+    setMode('moves');
+    state.chess = new Chess();
+    state.applied = [];
+  } else if (bootParsed) {
+    setMode(bootParsed.mode);
+    state.chess = bootParsed.chess;
+    state.applied = bootParsed.applied;
+    state.lastMove = bootParsed.applied.length ? bootParsed.applied[bootParsed.applied.length - 1] : null;
+  } else {
+    state.chess = new Chess();
+    state.applied = [];
+    state.lastMove = null;
+    setMode(state.mode);   // empty field keeps the restored/default mode (e.g. FEN)
+  }
+  renderChips(state.applied);
+  renderBoard();
+  analyze(); // instant demo result on load
+
+  /* ---------------- PWA ---------------- */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

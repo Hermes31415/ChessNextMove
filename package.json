@@ -1,0 +1,15 @@
+{
+  "name": "chessnext",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Next best move web app (UCI) using free, keyless chess APIs",
+  "scripts": {
+    "serve": "python3 -m http.server 8123",
+    "test": "node scripts/smoke.mjs",
+    "test:browser": "node scripts/browser-test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
