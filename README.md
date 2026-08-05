@@ -47,16 +47,38 @@ so it was dropped.
   examples adapt), validates all 6 FEN fields, and runs the same analysis.
 - Instant result: best move as **SAN + UCI**, eval (White-perspective), depth/nodes,
   follow-up PV chips, and the recommended move highlighted on the board.
+- **Top-3 moves** (Lichess Cloud Eval): the three best candidate moves with their
+  evals, best one highlighted.
 - **FEN after this move** viewer in the result card — the exact FEN of the position
   after the best move is applied (with its own Copy button), plus Copy FEN for the
   current position.
+- **Open in Lichess ↗** — one click opens the current position (board header) or the
+  after-move position (result card) in lichess.org/analysis; **Copy PV (UCI)** copies
+  the full engine line for pasting into engines/tools.
 - **Play it →** appends the best move and re-analyzes — in FEN mode the input
   advances to the new FEN (auto-play through the line).
 - Flip board, copy FEN, engine switching (results cached per position), last
   selection + moves persisted in `localStorage`.
 - Friendly error mapping: cloud-DB misses (404), rate limits (429), book misses,
   network errors — each with a hint on what to do.
-- Dark, chess-themed, responsive, keyboard-friendly (Enter to analyze).
+- **PWA**: installable to iPhone/desktop home screens (manifest + icons + service
+  worker); app shell works offline.
+- Dark, chess-themed, responsive (verified at 390px mobile), keyboard-friendly
+  (Enter to analyze).
+
+## Deploy (2 minutes, free)
+
+The app is pure static files — no server needed. Any static host works; all three
+APIs allow CORS from any origin (verified against a production origin).
+
+**Easiest — Netlify Drop:** open <https://app.netlify.com/drop> and drag the
+`ChessNextMove` folder onto the page. You get a live URL immediately (with a free
+account it stays yours).
+
+**Cloudflare Pages:** dash.cloudflare.com → Pages → "Upload assets" → drop the folder.
+
+**GitHub Pages:** push this repo to GitHub (Settings → Pages → deploy from `main`/root).
+The repo is already git-initialized with a first commit.
 
 ## Files
 
