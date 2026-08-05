@@ -2,6 +2,7 @@
 // auto-analysis, asserts the board + result rendered, captures console errors.
 import { chromium } from 'playwright';
 
+const APP_URL = process.env.APP_URL || 'http://localhost:8123';
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
 const errors = [];
@@ -41,7 +42,7 @@ const read = () => page.evaluate(() => ({
   status: (document.getElementById('status') || {}).textContent,
 }));
 
-await page.goto('http://localhost:8123/?v=6', { waitUntil: 'networkidle', timeout: 30000 });
+await page.goto(APP_URL + '/?v=6', { waitUntil: 'networkidle', timeout: 30000 });
 await waitResult(20000); // auto-analyze round-trip
 await page.waitForTimeout(500);
 const state = await read();
@@ -131,7 +132,7 @@ console.log('MODE-SWITCH (to Moves): ' + JSON.stringify(ms2));
 const mpage = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const mErrors = [];
 mpage.on('pageerror', (e) => mErrors.push(e.message));
-await mpage.goto('http://localhost:8123/?v=m1', { waitUntil: 'networkidle', timeout: 30000 });
+await mpage.goto(APP_URL + '/?v=m1', { waitUntil: 'networkidle', timeout: 30000 });
 await mpage.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
 await mpage.waitForTimeout(500);
 const mob = await mpage.evaluate(() => ({

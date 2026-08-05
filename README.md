@@ -1,5 +1,7 @@
 # ChessNext — next best move
 
+**Live: <https://hermes31415.github.io/ChessNextMove/>** (GitHub Pages)
+
 A tiny, keyless web app: type your first 2–3 chess moves (UCI or SAN) and get the
 **next best move in UCI** — plus evaluation, follow-up line, and an interactive board —
 from free public chess APIs. No server, no sign-up, no storage: requests go straight
@@ -77,8 +79,9 @@ account it stays yours).
 
 **Cloudflare Pages:** dash.cloudflare.com → Pages → "Upload assets" → drop the folder.
 
-**GitHub Pages:** push this repo to GitHub (Settings → Pages → deploy from `main`/root).
-The repo is already git-initialized with a first commit.
+**GitHub Pages (already done):** repo at <https://github.com/Hermes31415/ChessNextMove>,
+app served at <https://hermes31415.github.io/ChessNextMove/>. To redeploy after
+changes: `git push` — Pages rebuilds automatically.
 
 ## Files
 
