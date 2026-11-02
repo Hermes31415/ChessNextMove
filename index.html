@@ -195,6 +195,13 @@
     border-top: 1px solid var(--border); padding-top: 10px;
   }
   .fenafter[hidden] { display: none; }
+  .linkbadge {
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none;
+    color: var(--muted); background: #0c1116; border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 9px; white-space: normal;
+  }
+  .linkbadge.ok { color: var(--ok); border-color: rgba(87, 185, 139, .55); }
+  .linkbadge.diff { color: var(--accent); border-color: rgba(212, 167, 92, .55); }
   .falabel { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px; white-space: nowrap; }
   .fenafter code { word-break: break-all; font-size: 12px; }
   button.mini { font-size: 12px; padding: 4px 9px; }
@@ -286,7 +293,7 @@
     </div>
 
     <div id="result" class="panel result" hidden>
-      <div class="rhead">Best move · <b id="engineName"></b></div>
+      <div class="rhead">Best move · <b id="engineName"></b> <span id="linkBadge" class="linkbadge" hidden></span></div>
       <div class="rmove">
         <span id="rGlyph" class="glyph"></span>
         <span id="rSan" class="san"></span>
@@ -313,7 +320,7 @@
 
 <footer>
   Free, keyless APIs — requests go straight from this page to the services: Lichess Cloud Eval (instant deep analysis), chess-api.com (live Stockfish), chessdb.cn (opening book). No server, no storage, no sign-up. Please respect their rate limits.
-  <div style="margin-top:6px">Every position has its own link — open one with <code>?moves=e2e4 e7e5</code>, <code>?fen=…</code> and <code>?engine=cloud|api|chessdb</code>, or hit <b>🔗 Link</b> to copy the current one.</div>
+  <div style="margin-top:6px">Every position has its own link — open one with <code>?moves=e2e4 e7e5</code>, <code>?fen=…</code>, <code>?engine=cloud|api|chessdb</code> and <code>?best=g8f6</code> (the move the link claims is best — re-checked when it opens), or hit <b>🔗 Link</b> to copy the current one.</div>
 </footer>
 
 <script type="module">
@@ -361,6 +368,7 @@ import { Chess } from './chess.min.js';
   var lichessBtn = document.getElementById('lichessBtn');
   var lichessAfterBtn = document.getElementById('lichessAfterBtn');
   var copyLinkBtn = document.getElementById('copyLinkBtn');
+  var linkBadgeEl = document.getElementById('linkBadge');
 
   var GLYPHS = {
     w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
@@ -660,6 +668,28 @@ import { Chess } from './chess.min.js';
     var cell = c.board()[8 - (m.to.charCodeAt(1) - 48)][m.to.charCodeAt(0) - 97];
     return cell ? GLYPHS[cell.color][cell.type] : '';
   }
+  function sanFor(fen, uci) {
+    try { var m = new Chess(fen).move(uciObj(uci)); return m ? m.san : null; } catch (e) { return null; }
+  }
+  /* The "is this move best?" claim from the link, checked against the fresh
+     analysis (engines drift: cloud depth grows, databases get re-run). */
+  function linkClaim() {
+    return (urlBest && urlFen && urlFen === state.chess.fen()) ? urlBest : null;
+  }
+  function renderLinkBadge(res) {
+    var claim = linkClaim();
+    if (!claim) { linkBadgeEl.hidden = true; linkBadgeEl.textContent = ''; return; }
+    var claimSan = sanFor(state.chess.fen(), claim) || claim;
+    var claimText = claimSan === claim ? claim : claimSan + ' (' + claim + ')';
+    if (res && res.uci && res.uci === claim) {
+      linkBadgeEl.className = 'linkbadge ok';
+      linkBadgeEl.textContent = '✓ link’s move confirmed (' + (res.san || claim) + ')';
+    } else {
+      linkBadgeEl.className = 'linkbadge diff';
+      linkBadgeEl.textContent = 'link said ' + claimText + ' — engine now says ' + ((res && res.san) || '?');
+    }
+    linkBadgeEl.hidden = false;
+  }
 
   function applyResult(res, engineId) {
     state.result = res;
@@ -774,8 +804,10 @@ import { Chess } from './chess.min.js';
     copyPvBtn.disabled = !(res.pv && res.pv.length);
     lichessAfterBtn.disabled = !res.fenAfter;
     renderBoard();
+    renderLinkBadge(res);
     statusEl.textContent = '';
     statusEl.className = 'status';
+    syncUrl();          // the link now carries the answer too
   }
   function header(txt) {
     var el = document.createElement('div');
@@ -850,7 +882,13 @@ import { Chess } from './chess.min.js';
       cache[key] = res;
       applyResult(res, engineId);
     } catch (e) {
-      setStatus('error', messageFor(e, engineId));
+      var msg = messageFor(e, engineId);
+      var claim = linkClaim();
+      if (claim) {
+        msg += ' · The link suggested ' + (sanFor(state.chess.fen(), claim) || claim) + '.';
+        linkBadgeEl.hidden = true;
+      }
+      setStatus('error', msg);
     } finally {
       analyzeBtn.disabled = false;
     }
@@ -925,9 +963,13 @@ import { Chess } from './chess.min.js';
        ?moves=e2e4 e7e5 g1f3      (UCI or SAN; + for spaces also works)
        ?fen=rnbqkbnr/... w KQkq - 0 1
        &engine=cloud|api|chessdb
+       &best=g8f6                 the move this link claims is best (advisory)
      Unknown params (e.g. cache-busters) are preserved. */
-  var URL_KEYS = ['moves', 'p', 'position', 'fen', 'engine'];
+  var URL_KEYS = ['moves', 'p', 'position', 'fen', 'engine', 'best'];
+  var UCI_RE = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
   var syncUrlEnabled = false;   // only rewrite the address bar after a deep link or a user action
+  var urlBest = null;           // the move a shared link claims is best
+  var urlFen = null;            // …and the position that claim belongs to
   function readUrl() {
     var q;
     try { q = new URLSearchParams(location.search); } catch (e) { return false; }
@@ -942,6 +984,8 @@ import { Chess } from './chess.min.js';
     }
     if (fen && fen.trim()) { setMode('fen'); inputEl.value = fen.trim(); pos = true; }
     else if (moves && moves.trim()) { setMode('moves'); inputEl.value = moves.trim(); pos = true; }
+    var claim = q.get('best');
+    if (pos && claim && UCI_RE.test(claim.trim())) urlBest = claim.trim().toLowerCase();
     return pos;   // engine-only links still fall back to the remembered position
   }
   function permalink() {
@@ -956,6 +1000,7 @@ import { Chess } from './chess.min.js';
       if (v) q.set('moves', v);
     }
     if (currentEngine() !== 'cloud') q.set('engine', currentEngine());
+    if (state.result && state.result.uci) q.set('best', state.result.uci);   // the answer is part of the link
     var qs = q.toString();
     u.search = qs ? '?' + qs : '';
     return u.href;
@@ -1036,6 +1081,7 @@ import { Chess } from './chess.min.js';
   }
   renderChips(state.applied);
   renderBoard();
+  urlFen = fromUrl ? state.chess.fen() : null;   // a link's &best= claim belongs to this position
   analyze(); // instant demo result on load
 
   /* ---------------- PWA ---------------- */

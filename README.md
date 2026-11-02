@@ -80,6 +80,7 @@ link, the same "URL way in" the big chess sites offer.
 | `?moves=e4 e5 Nf3` | the same position written in SAN |
 | `?fen=<FEN>` | analyzes a pasted FEN instead of moves |
 | `?engine=cloud\|stockfish\|book` | picks the engine (`lichess`/`api`/`chessdb` aliases accepted) |
+| `?best=<uci>` | the move the link **claims** is best — re-checked against a fresh analysis when it opens |
 | `?p=` · `?position=` | aliases for `?moves=` |
 
 Example: <https://hermes31415.github.io/ChessNextMove/?moves=e2e4%20e7e5%20g1f3%20b8c6%20f1c4&engine=cloud>
@@ -90,6 +91,15 @@ Example: <https://hermes31415.github.io/ChessNextMove/?moves=e2e4%20e7e5%20g1f3%
   address bar is updated to the live position — **🔗 Link** copies that permalink,
   so any moment of a game is shareable.
 - A plain visit never rewrites the URL.
+
+**The recommended move travels in the link too.** After each analysis the app writes
+the answer into the address bar as `?best=<uci>`, so a link says both *"this is the
+position"* and *"ChessNext's answer here is `Nf6`"*. Because an engine answer can
+change over time (the cloud database gets deeper, book lines get re-run), opening
+such a link re-analyzes the position and **reports whether the claim still holds**:
+a green **✓ link's move confirmed (Nf6)** badge, or an amber *"link said a3 — engine
+now says Nf6"* when it no longer does. The claim is advisory only — nothing from the
+URL is trusted, and the board always shows the freshly computed move.
 
 ## JSON API — POST + GET, for scripts and other apps
 

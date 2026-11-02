@@ -169,9 +169,37 @@ await dclick.click('#copyLinkBtn');
 await dclick.waitForTimeout(400);
 const dlStatus = await dclick.evaluate(async () => ({
   clip: await navigator.clipboard.readText().catch(() => ''),
-  status: document.getElementById('status').textContent
+  status: document.getElementById('status').textContent,
+  search: location.search
 }));
 console.log('permalink: ' + JSON.stringify(dlStatus));
+
+// a link that carries the recommended move (&best=) — the claim is re-checked on load
+const claimRead = (p) => p.evaluate(() => ({
+  badge: (document.getElementById('linkBadge') || {}).textContent || '',
+  cls: (document.getElementById('linkBadge') || {}).className || '',
+  hidden: (document.getElementById('linkBadge') || {}).hidden,
+  best: (document.getElementById('rUci') || {}).textContent || '',
+  search: location.search
+}));
+const dClaim = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+dClaim.on('pageerror', (e) => dErrors.push('CLAIM: ' + e.message));
+await dClaim.goto(APP_URL + '/?' + new URLSearchParams({ moves: 'e2e4 e7e5 g1f3 b8c6 f1c4', engine: 'cloud', best: 'g8f6' }).toString(),
+  { waitUntil: 'networkidle', timeout: 30000 });
+await dClaim.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
+await dClaim.waitForTimeout(600);
+const okClaim = await claimRead(dClaim);
+console.log('LINK CLAIM (link says g8f6): ' + JSON.stringify(okClaim));
+
+// a link whose claim the engine now disagrees with must say so, not silently agree
+const dBadClaim = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+dBadClaim.on('pageerror', (e) => dErrors.push('BADCLAIM: ' + e.message));
+await dBadClaim.goto(APP_URL + '/?' + new URLSearchParams({ moves: 'e2e4 e7e5 g1f3 b8c6 f1c4', engine: 'cloud', best: 'a2a3' }).toString(),
+  { waitUntil: 'networkidle', timeout: 30000 });
+await dBadClaim.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
+await dBadClaim.waitForTimeout(600);
+const badClaim = await claimRead(dBadClaim);
+console.log('LINK CLAIM (link says a2a3): ' + JSON.stringify(badClaim));
 
 const dFen = await browser.newPage({ viewport: { width: 1280, height: 860 } });
 dFen.on('pageerror', (e) => dErrors.push('FEN: ' + e.message));
@@ -192,6 +220,10 @@ const deeplinksOk = dlMoves.input === 'e2e4 e7e5 g1f3 b8c6 f1c4' && dlMoves.engi
   && !plainSearch.includes('moves=') && !plainSearch.includes('fen=')
   && clickSearch.includes('moves=e2e4') && clickSearch.includes('v=clean')
   && /moves=e2e4/.test(dlStatus.clip + dlStatus.status) && /localhost/.test(dlStatus.clip + dlStatus.status)
+  && dlStatus.search.includes('best=')                                   // the link carries the answer
+  && okClaim.hidden === false && /(confirmed|engine now says)/.test(okClaim.badge) && /(Nf6|g8f6)/.test(okClaim.badge)
+  && okClaim.search.includes('best=' + okClaim.best)      // the link carries the answer that is shown
+  && badClaim.hidden === false && /link said/.test(badClaim.badge) && /a2a3/.test(badClaim.badge) && badClaim.cls.includes('diff')
   && dlFen.fenSel && dlFen.chips === 'Position from FEN' && dlFen.fenLabel === QGA_FEN && dlFen.resultVisible
   && dlFen.search.includes('fen=')
   && dErrors.length === 0;
