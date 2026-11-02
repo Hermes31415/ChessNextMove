@@ -52,7 +52,7 @@ console.log('ERRORS: ' + (errors.length ? '\n' + errors.join('\n') : 'none'));
 // FEN-after correctness for the start position: e2e4 must give black to move
 let fenAfterOk = false;
 try {
-  const mod = await import('/Users/mateusz/Documents/ChessNextMove/chess.min.js');
+  const mod = await import('../chess.min.js');
   const c = new mod.Chess(state.fenAfter);
   fenAfterOk = c.turn() === 'b' && state.fenAfter === 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
 } catch (e) { fenAfterOk = false; }
@@ -128,6 +128,75 @@ const ms2 = await page.evaluate(() => ({
 }));
 console.log('MODE-SWITCH (to Moves): ' + JSON.stringify(ms2));
 
+// ---- deep links (the GET side of the "URL API") ----
+const ITALIAN_FEN = 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3';
+const QGA_FEN = 'rnbqkbnr/ppp1pppp/8/8/2pP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3';
+
+const dErrors = [];
+const dmove = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+dmove.on('pageerror', (e) => dErrors.push('MOVES: ' + e.message));
+await dmove.goto(APP_URL + '/?' + new URLSearchParams({ moves: 'e2e4 e7e5 g1f3 b8c6 f1c4', engine: 'chessdb' }).toString(),
+  { waitUntil: 'networkidle', timeout: 30000 });
+await dmove.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
+await dmove.waitForTimeout(400);
+const dlMoves = await dmove.evaluate(() => ({
+  input: document.getElementById('moves').value,
+  engine: (document.querySelector('input[name=engine]:checked') || {}).value,
+  fenLabel: document.getElementById('fenLabel').textContent,
+  dbRows: document.querySelectorAll('.dbrow').length,
+  resultVisible: !document.getElementById('result').hidden,
+  search: location.search,
+  chips: document.getElementById('chips').textContent,
+}));
+console.log('DEEPLINK moves+engine: ' + JSON.stringify(dlMoves));
+
+// plain load (no position params) must NOT rewrite the address bar; an action must
+const dclick = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+dclick.on('pageerror', (e) => dErrors.push('CLICK: ' + e.message));
+await dclick.goto(APP_URL + '/?v=clean', { waitUntil: 'networkidle', timeout: 30000 });
+await dclick.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
+const plainSearch = await dclick.evaluate(() => location.search);
+await dclick.click('.chip-btn');           // "Italian"
+await dclick.waitForFunction(() => location.search.includes('moves='), { timeout: 10000 }).catch(() => {});
+const clickSearch = await dclick.evaluate(() => location.search);
+console.log('URL plain load: ' + JSON.stringify(plainSearch) + ' -> after chip click: ' + JSON.stringify(clickSearch));
+
+// permalink button copies a link that re-opens this position
+try { await browser.contexts()[0].grantPermissions(['clipboard-read', 'clipboard-write'], { origin: APP_URL }); }
+catch (e) { console.log('clipboard permission grant failed: ' + e.message); }
+await dclick.waitForTimeout(2500);        // let the chip analysis settle (it clears the status line when it lands)
+await dclick.click('#copyLinkBtn');
+await dclick.waitForTimeout(400);
+const dlStatus = await dclick.evaluate(async () => ({
+  clip: await navigator.clipboard.readText().catch(() => ''),
+  status: document.getElementById('status').textContent
+}));
+console.log('permalink: ' + JSON.stringify(dlStatus));
+
+const dFen = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+dFen.on('pageerror', (e) => dErrors.push('FEN: ' + e.message));
+await dFen.goto(APP_URL + '/?' + new URLSearchParams({ fen: QGA_FEN }).toString(), { waitUntil: 'networkidle', timeout: 30000 });
+await dFen.waitForFunction(() => !document.getElementById('result').hidden, { timeout: 20000 }).catch(() => {});
+await dFen.waitForTimeout(400);
+const dlFen = await dFen.evaluate(() => ({
+  fenLabel: document.getElementById('fenLabel').textContent,
+  fenSel: document.getElementById('modeFen').classList.contains('sel'),
+  chips: document.getElementById('chips').textContent,
+  resultVisible: !document.getElementById('result').hidden,
+  search: location.search,
+}));
+console.log('DEEPLINK fen: ' + JSON.stringify(dlFen));
+const deeplinksOk = dlMoves.input === 'e2e4 e7e5 g1f3 b8c6 f1c4' && dlMoves.engine === 'chessdb'
+  && dlMoves.fenLabel === ITALIAN_FEN && dlMoves.resultVisible && dlMoves.dbRows === 5
+  && dlMoves.search.includes('moves=') && dlMoves.search.includes('engine=chessdb')
+  && !plainSearch.includes('moves=') && !plainSearch.includes('fen=')
+  && clickSearch.includes('moves=e2e4') && clickSearch.includes('v=clean')
+  && /moves=e2e4/.test(dlStatus.clip + dlStatus.status) && /localhost/.test(dlStatus.clip + dlStatus.status)
+  && dlFen.fenSel && dlFen.chips === 'Position from FEN' && dlFen.fenLabel === QGA_FEN && dlFen.resultVisible
+  && dlFen.search.includes('fen=')
+  && dErrors.length === 0;
+console.log('DEEPLINKS: ' + (deeplinksOk ? 'PASS' : 'FAIL'));
+
 // mobile viewport check (iPhone-ish 390x844): layout must not overflow
 const mpage = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const mErrors = [];
@@ -156,6 +225,7 @@ const ok = state.squares === 64 && state.resultVisible && !errors.length
   && s5.modeFenSel && s5.chips === 'Position from FEN' && s5.dbRows === 5
   && s6.moves.indexOf('/') !== -1 && s6.modeFenSel
   && ms2.value === '' && ms2.movesSel && ms2.resultHidden
+  && deeplinksOk
   && mob.squares === 64 && mob.resultVisible && mob.scrollW <= mob.winW && mErrors.length === 0;
 console.log('\nVERDICT: ' + (ok ? 'PASS' : 'CHECK'));
 process.exit(ok ? 0 : 2);

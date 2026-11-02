@@ -1,15 +1,22 @@
 {
   "name": "chessnext",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Next best move web app (UCI) using free, keyless chess APIs",
+  "description": "Next best move web app + free JSON API (POST/GET) over keyless chess services",
   "scripts": {
     "serve": "python3 -m http.server 8123",
-    "test": "node scripts/smoke.mjs",
-    "test:browser": "node scripts/browser-test.mjs"
+    "build:api": "node scripts/build-api.mjs",
+    "pretest": "npm run build:api",
+    "test": "node scripts/smoke.mjs && node scripts/api-test.mjs",
+    "test:web": "node scripts/smoke.mjs",
+    "test:api": "node scripts/api-test.mjs",
+    "test:browser": "node scripts/browser-test.mjs",
+    "dev:api": "npm run build:api && npx wrangler dev",
+    "deploy:api": "npm run build:api && npx wrangler deploy"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "playwright": "^1.62.1"
   }
 }

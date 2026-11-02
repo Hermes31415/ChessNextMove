@@ -1,0 +1,10 @@
+# ChessNext API — deploy target: Cloudflare Workers (free tier, 100k req/day).
+#   npm run build:api        # bundle api/worker.js -> api/dist/worker.mjs
+#   npx wrangler dev         # run it locally on http://localhost:8787
+#   npx wrangler deploy      # publish it (needs a free Cloudflare account: npx wrangler login)
+name = "chessnext-api"
+main = "api/dist/worker.mjs"
+compatibility_date = "2025-06-01"
+
+[observability]
+enabled = true

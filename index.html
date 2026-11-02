@@ -278,6 +278,7 @@
         <div class="btns">
           <button id="flipBtn" title="Flip the board">⇅ Flip</button>
           <button id="copyFenBtn" title="Copy the current position as FEN">Copy FEN</button>
+          <button id="copyLinkBtn" title="Copy a link that re-opens exactly this position">🔗 Link</button>
           <button id="lichessBtn" title="Open this position on lichess.org">Lichess ↗</button>
         </div>
       </div>
@@ -312,6 +313,7 @@
 
 <footer>
   Free, keyless APIs — requests go straight from this page to the services: Lichess Cloud Eval (instant deep analysis), chess-api.com (live Stockfish), chessdb.cn (opening book). No server, no storage, no sign-up. Please respect their rate limits.
+  <div style="margin-top:6px">Every position has its own link — open one with <code>?moves=e2e4 e7e5</code>, <code>?fen=…</code> and <code>?engine=cloud|api|chessdb</code>, or hit <b>🔗 Link</b> to copy the current one.</div>
 </footer>
 
 <script type="module">
@@ -358,6 +360,7 @@ import { Chess } from './chess.min.js';
   var copyPvBtn = document.getElementById('copyPvBtn');
   var lichessBtn = document.getElementById('lichessBtn');
   var lichessAfterBtn = document.getElementById('lichessAfterBtn');
+  var copyLinkBtn = document.getElementById('copyLinkBtn');
 
   var GLYPHS = {
     w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
@@ -825,6 +828,7 @@ import { Chess } from './chess.min.js';
     resultEl.hidden = true;
     renderChips(parsed.applied);
     renderBoard();
+    syncUrl();
     if (state.chess.moves().length === 0) {
       setStatus('error', 'Game over — no moves left to suggest.');
       return;
@@ -856,6 +860,7 @@ import { Chess } from './chess.min.js';
   function playBest() {
     var res = state.result;
     if (!res || !res.uci) return;
+    userAction();
     var mv = state.chess.move(uciObj(res.uci));
     if (!mv) return;
     if (state.mode === 'fen') {
@@ -914,6 +919,54 @@ import { Chess } from './chess.min.js';
       }
     } catch (e) { /* ignore */ }
   }
+  /* ---------------- URL: deep links (GET) + permalink ---------------- */
+  /* A position can be opened straight from the URL — the same "URL API" shape
+     chess sites use:
+       ?moves=e2e4 e7e5 g1f3      (UCI or SAN; + for spaces also works)
+       ?fen=rnbqkbnr/... w KQkq - 0 1
+       &engine=cloud|api|chessdb
+     Unknown params (e.g. cache-busters) are preserved. */
+  var URL_KEYS = ['moves', 'p', 'position', 'fen', 'engine'];
+  var syncUrlEnabled = false;   // only rewrite the address bar after a deep link or a user action
+  function readUrl() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return false; }
+    var engine = q.get('engine');
+    var fen = q.get('fen');
+    var moves = q.get('moves') || q.get('p') || q.get('position');
+    var pos = false;
+    if (engine && ENGINES[engine]) {
+      state.engine = engine;
+      var rb = document.querySelector('input[name=engine][value="' + engine + '"]');
+      if (rb) rb.checked = true;
+    }
+    if (fen && fen.trim()) { setMode('fen'); inputEl.value = fen.trim(); pos = true; }
+    else if (moves && moves.trim()) { setMode('moves'); inputEl.value = moves.trim(); pos = true; }
+    return pos;   // engine-only links still fall back to the remembered position
+  }
+  function permalink() {
+    var u;
+    try { u = new URL(location.href); } catch (e) { return location.href; }
+    var q = u.searchParams;
+    URL_KEYS.forEach(function (k) { q.delete(k); });
+    if (state.mode === 'fen') {
+      q.set('fen', state.chess.fen());
+    } else {
+      var v = inputEl.value.trim();
+      if (v) q.set('moves', v);
+    }
+    if (currentEngine() !== 'cloud') q.set('engine', currentEngine());
+    var qs = q.toString();
+    u.search = qs ? '?' + qs : '';
+    return u.href;
+  }
+  function syncUrl() {
+    if (!syncUrlEnabled) return;
+    try { history.replaceState(null, '', permalink()); } catch (e) { /* file:// */ }
+  }
+  function copyLink() { copyText(permalink(), 'Permalink copied — it re-opens this exact position.'); }
+  function userAction() { syncUrlEnabled = true; }
+
   function markEngine() {
     var cards = document.querySelectorAll('.engine');
     var checked = currentEngine();
@@ -923,16 +976,17 @@ import { Chess } from './chess.min.js';
   }
 
   /* ---------------- wire up ---------------- */
-  analyzeBtn.addEventListener('click', function () { saveState(); analyze(); });
+  analyzeBtn.addEventListener('click', function () { userAction(); saveState(); analyze(); });
   modeMovesBtn.addEventListener('click', function () { switchMode('moves'); });
   modeFenBtn.addEventListener('click', function () { switchMode('fen'); });
-  inputEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { saveState(); analyze(); } });
+  inputEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { userAction(); saveState(); analyze(); } });
   playBtn.addEventListener('click', playBest);
   document.getElementById('flipBtn').addEventListener('click', function () {
     state.flipped = !state.flipped;
     renderBoard();
   });
   document.getElementById('copyFenBtn').addEventListener('click', copyFen);
+  copyLinkBtn.addEventListener('click', copyLink);
   copyAfterBtn.addEventListener('click', copyFenAfter);
   copyPvBtn.addEventListener('click', copyPvUci);
   lichessBtn.addEventListener('click', openLichess);
@@ -941,6 +995,7 @@ import { Chess } from './chess.min.js';
     rb.addEventListener('change', function () {
       markEngine();
       saveState();
+      userAction();
       var parsed = parseMoves(inputEl.value);
       if (!parsed.error) analyze();
     });
@@ -949,12 +1004,16 @@ import { Chess } from './chess.min.js';
     b.addEventListener('click', function () {
       inputEl.value = b.dataset.moves;
       saveState();
+      userAction();
       analyze();
     });
   });
 
   /* ---------------- boot ---------------- */
-  restoreState();
+  // A deep link (?moves= / ?fen=) wins over the remembered state.
+  var fromUrl = readUrl();
+  if (fromUrl) syncUrlEnabled = true;
+  if (!fromUrl) restoreState();
   markEngine();
   var bootParsed = inputEl.value.trim() ? parseInput(inputEl.value) : null;
   if (bootParsed && bootParsed.error) {

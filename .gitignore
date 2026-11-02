@@ -1,2 +1,6 @@
 node_modules/
 .DS_Store
+
+# Cloudflare Worker build output + local wrangler state
+api/dist/
+.wrangler/
